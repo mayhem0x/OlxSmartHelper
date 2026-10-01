@@ -1,17 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "OLX Smart Helper",
-  "version": "0.2.0",
-  "description": "Показывает, выгодная / рыночная / завышенная ли цена объявления на OLX.",
+  "name": "__MSG_extName__",
+  "version": "0.4.0",
+  "default_locale": "ru",
+  "description": "__MSG_extDescription__",
+  "minimum_chrome_version": "111",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["storage"],
+  "permissions": [
+    "storage"
+  ],
   "action": {
     "default_popup": "src/popup/popup.html",
-    "default_title": "OLX Smart Helper",
+    "default_title": "__MSG_actionTitle__",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -41,16 +45,34 @@
         "*://*.olx.uz/*"
       ],
       "js": [
+        "src/core/route-hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://*.olx.pl/*",
+        "*://*.olx.ua/*",
+        "*://*.olx.ro/*",
+        "*://*.olx.bg/*",
+        "*://*.olx.kz/*",
+        "*://*.olx.uz/*"
+      ],
+      "js": [
         "src/core/utils.js",
+        "src/core/i18n.js",
         "src/core/extractor.js",
-        "src/core/similarity.js",
         "src/core/estimator.js",
         "src/core/presets.js",
         "src/core/store.js",
         "src/ui/ui.js",
         "src/content.js"
       ],
-      "css": ["src/ui/styles.css"],
+      "css": [
+        "src/ui/styles.css"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }

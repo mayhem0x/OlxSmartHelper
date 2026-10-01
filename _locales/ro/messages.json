@@ -1,0 +1,11 @@
+{
+  "extName": {
+    "message": "OLX Smart Helper"
+  },
+  "extDescription": {
+    "message": "Arată dacă prețul unui anunț OLX este avantajos, de piață sau umflat."
+  },
+  "actionTitle": {
+    "message": "OLX Smart Helper — evaluarea prețurilor de piață"
+  }
+}

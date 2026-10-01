@@ -1,162 +1,173 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-i18n-doc-title="opt.docTitle">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>OLX Smart Helper — помощь и настройки</title>
-  <style>
-    :root {
-      --bg: #14161c; --bg2: #1c1f28; --border: #2b2f3a;
-      --text: #eef1f7; --dim: #9aa2b1; --green: #1fbf75;
-      --orange: #f5a524; --red: #f0455f;
-      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; background: var(--bg); color: var(--text);
-      font-family: var(--font); font-size: 14px; line-height: 1.55;
-    }
-    .wrap { max-width: 760px; margin: 0 auto; padding: 28px 20px 60px; }
-    header.top { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-    .logo { width: 34px; height: 34px; border-radius: 9px; background: var(--bg2);
-      border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; }
-    .logo span { width: 14px; height: 14px; border-radius: 50%; background: var(--green); }
-    h1 { font-size: 20px; margin: 0; }
-    .sub { color: var(--dim); font-size: 13px; margin: 0 0 22px; }
-    section {
-      background: linear-gradient(180deg, var(--bg2), var(--bg));
-      border: 1px solid var(--border); border-radius: 14px;
-      padding: 18px 20px; margin-bottom: 16px;
-    }
-    h2 { font-size: 15px; margin: 0 0 10px; }
-    h3 { font-size: 13px; margin: 16px 0 6px; color: var(--dim); text-transform: uppercase; letter-spacing: .4px; }
-    p, li { color: #d6dae3; }
-    ul { padding-left: 18px; margin: 6px 0; }
-    code { background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 5px; font-size: 12.5px; }
-    /* watchlist */
-    .wl-item { display: flex; gap: 12px; align-items: flex-start; padding: 11px 0; border-top: 1px solid var(--border); }
-    .wl-item:first-child { border-top: none; }
-    .wl-main { flex: 1 1 auto; min-width: 0; }
-    .wl-title { font-weight: 700; font-size: 13.5px; margin-bottom: 2px; }
-    .wl-title a { color: var(--text); text-decoration: none; }
-    .wl-title a:hover { color: var(--green); }
-    .wl-meta { font-size: 12px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 10px; }
-    .wl-note { font-size: 12px; color: #c6cbd4; margin-top: 4px; font-style: italic; }
-    .wl-remove {
-      background: transparent; border: 1px solid var(--border); color: var(--dim);
-      border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 12px; flex: 0 0 auto;
-    }
-    .wl-remove:hover { color: var(--red); border-color: var(--red); }
-    .empty { color: var(--dim); font-size: 13px; padding: 8px 0; }
-    /* presets */
-    .pre-item { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); }
-    .pre-item:first-child { border-top: none; }
-    .pre-main { flex: 1 1 auto; min-width: 0; }
-    .pre-label { font-weight: 700; font-size: 13px; }
-    .pre-label .star { color: var(--green); margin-left: 6px; }
-    .pre-text { font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pre-del { background: transparent; border: none; color: var(--dim); cursor: pointer; font-size: 14px; }
-    .pre-del:hover { color: var(--red); }
-    .row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-    input, textarea {
-      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-      color: var(--text); font-family: var(--font); font-size: 13px; padding: 8px 10px;
-    }
-    input.grow { flex: 1 1 160px; }
-    textarea { width: 100%; min-height: 54px; resize: vertical; margin-top: 8px; }
-    button.primary {
-      background: var(--green); border: 1px solid var(--green); color: #05231a;
-      border-radius: 8px; padding: 8px 14px; font-weight: 700; cursor: pointer;
-    }
-    button.ghost {
-      background: transparent; border: 1px solid var(--border); color: var(--text);
-      border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer;
-    }
-    button.ghost:hover { border-color: #3a3f4c; }
-    button.danger {
-      background: transparent; border: 1px solid rgba(240,69,95,.5); color: var(--red);
-      border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer;
-    }
-    button.danger:hover { background: rgba(240,69,95,.12); border-color: var(--red); }
-    button.small { padding: 5px 10px; font-size: 12px; }
-    .toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; }
-    .toggle input { width: 16px; height: 16px; accent-color: var(--green); }
-    .b-ok { color: var(--green); }
-    .b-err { color: var(--red); }
-    .hint { font-size: 12px; color: var(--dim); margin: 8px 0 0; }
-    .dbg-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
-    .dbg-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-    #dbg-list { margin-top: 8px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-    #dbg-list:empty { display: none; }
-    .dbg-item { display: flex; gap: 10px; align-items: baseline; padding: 7px 11px; border-top: 1px solid var(--border); font-size: 12px; }
-    .dbg-item:first-child { border-top: none; }
-    .dbg-time { color: var(--dim); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
-    .dbg-type { font-weight: 700; flex: 0 0 auto; }
-    .dbg-type.warn { color: var(--orange); }
-    .dbg-payload { color: #c6cbd4; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 11.5px; }
-    @media (max-width: 480px) { .wrap { padding: 18px 14px 40px; } }
-  </style>
+  <title>OLX Smart Helper</title>
+  <link rel="icon" href="../../icons/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="../shared/base.css" />
+  <link rel="stylesheet" href="options.css" />
 </head>
 <body>
-  <div class="wrap">
-    <header class="top">
-      <div class="logo"><span></span></div>
-      <div>
-        <h1>OLX Smart Helper</h1>
-      </div>
-    </header>
-    <p class="sub">Версия <b id="app-version">—</b></p>
-
-    <section>
-      <h2>Шаблоны сообщений</h2>
-      <div id="presets"></div>
-      <div class="row">
-        <input id="p-label" class="grow" type="text" placeholder="Название" />
-        <input id="p-text" class="grow" type="text" placeholder="Текст сообщения" />
-        <button id="p-add" class="primary">Добавить</button>
-      </div>
-    </section>
-
-    <section>
-      <h2>Сохранённое</h2>
-      <div id="watchlist"><div class="empty">Загрузка…</div></div>
-      <div class="row">
-        <button id="wl-csv" class="ghost small">Экспорт в CSV</button>
-      </div>
-    </section>
-
-    <section>
-      <h2>Резервная копия</h2>
-      <div class="row">
-        <button id="b-export" class="primary">Экспорт (JSON)</button>
-        <button id="b-import" class="ghost">Импорт</button>
-        <button id="b-import-replace" class="danger">Заменить всё</button>
-        <input id="b-file" type="file" accept="application/json,.json" hidden />
-      </div>
-      <p class="hint">«Заменить всё» перезапишет все данные — необратимо.</p>
-      <div id="b-status" class="empty" style="margin-top:10px"></div>
-    </section>
-
-    <section>
-      <h2>Отладка</h2>
-      <label class="toggle">
-        <input id="dbg" type="checkbox" />
-        <span>Собирать диагностику извлечения</span>
-      </label>
-      <div class="dbg-head">
-        <h3>События</h3>
-        <div class="dbg-actions">
-          <button id="dbg-copy" class="ghost small">Скопировать</button>
-          <button id="dbg-refresh" class="ghost small">Обновить</button>
-          <button id="dbg-clear" class="ghost small">Очистить</button>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <img class="brand-logo" src="../../icons/icon.svg" alt="" />
+        <div>
+          <div class="brand-name">OLX Smart Helper</div>
+          <div class="brand-version"><span data-i18n="common.version">Версия</span> <span id="app-version">—</span></div>
         </div>
       </div>
-      <div id="dbg-list"><div class="empty">Нет событий.</div></div>
-    </section>
+      <p class="tagline" data-i18n="opt.tagline"></p>
+
+      <nav class="tabs" role="tablist" aria-orientation="vertical">
+        <button class="tab" role="tab" data-tab="general" id="tab-general" aria-controls="panel-general">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95a15.65 15.65 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.92 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2s.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 0 1 5.08 16zm2.95-8H5.08a7.99 7.99 0 0 1 4.33-3.56A15.65 15.65 0 0 0 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2s.07-1.35.16-2h4.68c.09.65.16 1.32.16 2s-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2s-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z"/></svg>
+          <span data-i18n="opt.tab.general"></span>
+        </button>
+        <button class="tab" role="tab" data-tab="presets" id="tab-presets" aria-controls="panel-presets">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/></svg>
+          <span data-i18n="opt.tab.presets"></span>
+        </button>
+        <button class="tab" role="tab" data-tab="saved" id="tab-saved" aria-controls="panel-saved">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
+          <span data-i18n="opt.tab.saved"></span>
+          <span class="tab-count" id="saved-count" hidden></span>
+        </button>
+        <button class="tab" role="tab" data-tab="backup" id="tab-backup" aria-controls="panel-backup">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/></svg>
+          <span data-i18n="opt.tab.backup"></span>
+        </button>
+        <button class="tab" role="tab" data-tab="debug" id="tab-debug" aria-controls="panel-debug">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 8h-2.81a5.985 5.985 0 0 0-1.82-1.96L17 4.41 15.59 3l-2.17 2.17a6.002 6.002 0 0 0-2.83 0L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z"/></svg>
+          <span data-i18n="opt.tab.debug"></span>
+        </button>
+      </nav>
+    </aside>
+
+    <main class="content">
+      <!-- General -->
+      <section class="panel" id="panel-general" role="tabpanel" aria-labelledby="tab-general">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title" data-i18n="lang.title"></h2>
+              <p class="card-sub" id="lang-current"></p>
+            </div>
+          </div>
+          <div class="field lang-field">
+            <label class="sr-only" for="lang" data-i18n="lang.title"></label>
+            <select id="lang" class="select"></select>
+          </div>
+          <p class="hint mt" data-i18n="lang.autoHint"></p>
+          <div class="note mt">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
+            <span data-i18n="lang.sellerNote"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Message templates -->
+      <section class="panel" id="panel-presets" role="tabpanel" aria-labelledby="tab-presets" hidden>
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title" data-i18n="presets.title"></h2>
+              <p class="card-sub" data-i18n="presets.hint"></p>
+            </div>
+          </div>
+          <div id="presets" class="list"></div>
+
+          <hr class="divider" />
+          <div class="eyebrow" data-i18n="presets.new"></div>
+          <div class="add-form">
+            <input id="p-label" class="input" type="text" data-i18n-placeholder="presets.name" />
+            <textarea id="p-text" class="textarea" rows="2" data-i18n-placeholder="presets.text"></textarea>
+            <div class="btn-row end">
+              <button id="p-add" class="btn btn-primary" type="button">
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                <span data-i18n="presets.add"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Saved / watchlist -->
+      <section class="panel" id="panel-saved" role="tabpanel" aria-labelledby="tab-saved" hidden>
+        <div class="card">
+          <div class="card-head">
+            <h2 class="card-title" data-i18n="saved.title"></h2>
+            <button id="wl-csv" class="btn btn-ghost btn-sm" type="button">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18V3H3zm8 16H5v-6h6v6zm0-8H5V5h6v6zm8 8h-6v-6h6v6zm0-8h-6V5h6v6z"/></svg>
+              <span data-i18n="saved.csv"></span>
+            </button>
+          </div>
+          <div id="watchlist" class="list"></div>
+        </div>
+      </section>
+
+      <!-- Backup -->
+      <section class="panel" id="panel-backup" role="tabpanel" aria-labelledby="tab-backup" hidden>
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title" data-i18n="backup.title"></h2>
+              <p class="card-sub" data-i18n="backup.desc"></p>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button id="b-export" class="btn btn-primary" type="button">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+              <span data-i18n="backup.export"></span>
+            </button>
+            <button id="b-import" class="btn btn-ghost" type="button">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+              <span data-i18n="backup.import"></span>
+            </button>
+            <button id="b-import-replace" class="btn btn-danger" type="button">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+              <span data-i18n="backup.replace"></span>
+            </button>
+            <input id="b-file" type="file" accept="application/json,.json" hidden />
+          </div>
+          <p class="hint mt" data-i18n="backup.hint"></p>
+          <p id="b-status" class="status-line mt" role="status"></p>
+        </div>
+      </section>
+
+      <!-- Debug -->
+      <section class="panel" id="panel-debug" role="tabpanel" aria-labelledby="tab-debug" hidden>
+        <div class="card">
+          <div class="card-head">
+            <h2 class="card-title" data-i18n="debug.title"></h2>
+          </div>
+          <label class="switch">
+            <input id="dbg" type="checkbox" />
+            <span class="switch-track" aria-hidden="true"></span>
+            <span class="switch-label" data-i18n="debug.toggle"></span>
+          </label>
+          <p class="hint mt" data-i18n="debug.toggleHint"></p>
+
+          <hr class="divider" />
+          <div class="card-head compact">
+            <div class="eyebrow" data-i18n="debug.events"></div>
+            <div class="btn-row">
+              <button id="dbg-copy" class="btn btn-sm" type="button" data-i18n="debug.copy"></button>
+              <button id="dbg-refresh" class="btn btn-sm" type="button" data-i18n="debug.refresh"></button>
+              <button id="dbg-clear" class="btn btn-sm btn-danger" type="button" data-i18n="debug.clear"></button>
+            </div>
+          </div>
+          <div id="dbg-list" class="log"></div>
+        </div>
+      </section>
+    </main>
   </div>
 
+  <script src="../core/i18n.js"></script>
   <script src="../core/store.js"></script>
   <script src="../core/presets.js"></script>
+  <script src="../shared/pages.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

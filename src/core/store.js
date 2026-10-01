@@ -27,6 +27,7 @@
   const MAX_PLAIN = 500;
 
   const STATUSES = ["not_contacted", "contacted", "replied", "ignored"];
+  // Kept for backward compatibility; UIs use i18n `status.<key>` instead.
   const STATUS_LABELS = {
     not_contacted: "Не связывался",
     contacted: "Написал",
@@ -285,7 +286,9 @@
   // Returns counts, or throws on an invalid bundle.
   async function importAll(bundle, mode = "merge") {
     if (!bundle || typeof bundle !== "object" || bundle.app !== "olx-smart-helper" || !bundle.data) {
-      throw new Error("Неверный формат файла (ожидается резервная копия OLX Smart Helper)");
+      const err = new Error("Неверный формат файла (ожидается резервная копия OLX Smart Helper)");
+      err.code = "invalid_bundle"; // lets UIs show a localized message
+      throw err;
     }
     const d = bundle.data;
     let listings, presets, flags;

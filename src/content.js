@@ -1,17 +1,82 @@
 /*
  * OLX Smart Helper — content script entry point.
- * Wires extractor → similarity → estimator → UI on both listing pages and
- * search-result cards. Re-runs on SPA navigation and lazy-loaded cards.
+ *
+ * Pipeline: extractor → estimator → ui, re-evaluated whenever the page
+ * changes. Change signals:
+ *   - SPA route changes: `olxsh:locationchange` from the MAIN-world hook
+ *     (pushState/replaceState), `popstate`, the Navigation API when present,
+ *     bfcache `pageshow`, and a slow URL poll as a safety net
+ *   - DOM changes: one MutationObserver, filtered so our own insertions never
+ *     re-trigger it, debounced with a maxWait so infinite scroll still updates
+ *
+ * Every pass is idempotent: cards are fingerprinted (ad id + price) and
+ * verdicts are diffed, so a pass over an unchanged page touches nothing.
  */
 (function () {
   "use strict";
 
   const OLXHelper = window.OLXHelper;
-  if (!OLXHelper) return;
-  const { utils: U, extractor, similarity, evaluator, store, ui } = OLXHelper;
-  const debug = OLXHelper.debug;
+  if (!OLXHelper || OLXHelper.__booted) return;
+  OLXHelper.__booted = true;
 
-  // Load debug flag and keep it live if toggled from the Options page.
+  const { utils: U, extractor: X, estimator: E, store, presets: P, ui, debug, i18n: I18N } = OLXHelper;
+  const t = (key, params) => I18N.t(key, params);
+
+  const RUN_DEBOUNCE = 250;
+  const RUN_MAX_WAIT = 1200;
+  const URL_POLL_MS = 1500;
+  // After an ad→ad SPA transition React may still show the previous ad briefly.
+  const STALE_DOM_WINDOW = 4000;
+
+  const state = {
+    route: routeKey(),
+    epoch: 0, // bumps on every route change; async work from older epochs is dropped
+    routeAt: Date.now(),
+    prevAd: { key: null, title: null },
+    cardsSig: "",
+    pool: [], // priced listings from the cards on screen (comparables for the ad page)
+    ad: emptyAdState(),
+    alive: true,
+  };
+
+  function emptyAdState() {
+    return { key: null, title: null, widget: null, verdictSig: "", pendingKey: null, handlers: null, data: null };
+  }
+
+  // Hash changes (gallery #photo-3) are not navigations.
+  function routeKey() {
+    return location.origin + location.pathname + location.search;
+  }
+
+  /* ---------- lifecycle / extension reload safety ---------- */
+
+  // After the extension is reloaded/updated, this orphaned script keeps running
+  // but every chrome.* call throws "Extension context invalidated". Shut down.
+  function contextAlive() {
+    try {
+      return !!(chrome.runtime && chrome.runtime.id);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function shutdown() {
+    if (!state.alive) return;
+    state.alive = false;
+    observer.disconnect();
+    clearInterval(pollTimer);
+    scheduleRun.cancel();
+    ui.removeWidget();
+    document.querySelectorAll('[data-olxsh="pill"]').forEach((n) => n.remove());
+  }
+
+  function ensureAlive() {
+    if (state.alive && !contextAlive()) shutdown();
+    return state.alive;
+  }
+
+  /* ---------- debug flag ---------- */
+
   store.isDebug().then((v) => debug.set(v));
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
@@ -23,260 +88,326 @@
     /* ignore if unavailable */
   }
 
-  /* ---------- build the comparison pool from visible cards ---------- */
+  /* ---------- main pass ---------- */
 
-  function buildPool() {
-    return extractor
-      .getCards()
-      .map((card) => extractor.extractCard(card))
-      .filter((l) => l.price != null && l.title);
+  function run() {
+    if (!ensureAlive()) return;
+    try {
+      const type = X.pageType();
+      processCards();
+      if (type === "ad") {
+        processAd().catch((e) => debug.warn("ad pass failed", e));
+      } else if (state.ad.widget) {
+        teardownAd();
+      }
+    } catch (e) {
+      // Never break the host page.
+      debug.warn("pass failed", e);
+    }
   }
 
-  /* ---------- analyze a single card against its peers ---------- */
+  // Debounced, then deferred to idle time so we never compete with React commits.
+  const scheduleRun = U.debounce(
+    () => {
+      if ("requestIdleCallback" in window) requestIdleCallback(run, { timeout: 600 });
+      else run();
+    },
+    RUN_DEBOUNCE,
+    { maxWait: RUN_MAX_WAIT }
+  );
 
-  function analyzeCards() {
-    const cards = extractor.getCards();
-    if (cards.length < 2) return;
+  /* ---------- search / category cards ---------- */
 
-    // Extract all once so every card is compared against the same pool.
-    const listings = cards.map((card) => ({
-      card,
-      listing: extractor.extractCard(card),
-    }));
-    const pool = listings.map((x) => x.listing).filter((l) => l.price != null);
+  function processCards() {
+    const cards = X.getCards();
+    const listings = cards.map((el) => X.extractCard(el));
+    state.pool = listings.filter((l) => l.priceKind === "price");
 
-    for (const { card, listing } of listings) {
-      if (listing.price == null || !listing.title) continue;
-      const comps = similarity.findSimilar(listing, pool, { limit: 30 });
-      const verdict = evaluator.evaluate(listing, comps);
-      ui.renderCardPill(card, verdict);
+    const sig = listings.map((l) => l.sig).join("~");
+    const pillsIntact = listings.every((l) => l.priceKind !== "price" || ui.hasPill(l._el));
+    if (sig === state.cardsSig && pillsIntact) return;
+    state.cardsSig = sig;
+
+    if (listings.length < 2) return;
+    for (const { listing, verdict } of E.analyzeAll(listings)) {
+      // Unpriced cards (free / exchange / no price) get no pill.
+      ui.upsertPill(listing._el, listing.priceKind === "price" ? verdict : null, listing);
     }
 
-    logCardDiagnostics(listings);
-  }
-
-  // Debug: summarize how many cards failed title/price extraction + samples.
-  function logCardDiagnostics(listings) {
-    if (!debugRun) return;
-    const noTitle = listings.filter((x) => !x.listing.title);
-    const noPrice = listings.filter((x) => x.listing.price == null);
-    debug.event("search-cards", {
-      cards: listings.length,
-      missingTitle: noTitle.length,
-      missingPrice: noPrice.length,
-    });
-    const sample = [...noTitle, ...noPrice].slice(0, 3);
-    for (const x of sample) {
-      debug.event("unmatched-card", {
-        classes: x.card.className || "(none)",
-        html: (x.card.outerHTML || "").slice(0, 160),
+    if (debug.enabled && debug.throttle()) {
+      debug.event("cards", {
+        cards: listings.length,
+        priced: state.pool.length,
+        missingTitle: listings.filter((l) => !l.title).length,
+        missingPrice: listings.filter((l) => l.priceKind === "none").length,
       });
     }
   }
 
-  /* ---------- analyze the single listing page ---------- */
+  /* ---------- single ad page ---------- */
 
-  async function analyzePage() {
-    const target = extractor.extractPage();
-    if (debugRun) {
-      debug.event("listing", {
-        titleFound: !!target.title,
-        priceFound: target.price != null,
-        priceRaw: target.priceRaw || "(none)",
-      });
-    }
-    if (!target.title) {
-      if (debugRun) debug.event("no-title", { url: location.pathname });
+  async function processAd() {
+    const epoch = state.epoch;
+    const target = X.extractPage();
+    if (!target.title) return; // not rendered yet; the observer will call us again
+    const key = store.listingKey(target.url);
+
+    // Stale-DOM guard: URL already points at the new ad, but React still shows
+    // the previous one. Wait for the re-render (bounded, in case the titles
+    // really are identical).
+    const stale = !!state.prevAd.title && key !== state.prevAd.key && target.title === state.prevAd.title;
+    // Search→ad transition: the URL is an ad but the DOM may still be the
+    // search page (whose <h1> would pass for a title). Wait for ad markup.
+    const notRenderedYet = !X.hasAdMarkup();
+    if ((stale || notRenderedYet) && Date.now() - state.routeAt < STALE_DOM_WINDOW) {
+      setTimeout(scheduleRun, 600);
       return;
     }
 
-    const id = store.listingKey(target.url);
+    const { verdict, comps } = E.analyzeTarget(target, state.pool);
+    const vSig = `${target.price}|${target.currency}|${verdict.status}|${verdict.baseline}|${verdict.comparablesCount}`;
 
-    // Stability guard: render the helper card ONCE per listing. OLX mutates the
-    // DOM constantly, which re-triggers run(); re-rendering here would destroy
-    // open panels and reset the note input mid-typing. If our card is already
-    // present for this listing, leave it (and its interaction state) alone.
-    if (renderedId === id && document.getElementById("olxsh-card")) return;
+    // Same ad but a different title: we rendered from a half-updated DOM.
+    if (state.ad.key === key && state.ad.widget && state.ad.title !== target.title) teardownAd();
 
-    // Comparables come from any cards OLX renders in "similar ads" sections.
-    const pool = buildPool();
-    const comps = similarity.findSimilar(target, pool, { limit: 40 });
-    const verdict = evaluator.evaluate(target, comps);
+    // Already rendered for this ad: re-mount if React dropped it, refresh data.
+    if (state.ad.key === key && state.ad.widget) {
+      ui.ensureWidgetMounted(state.ad.widget, target._priceEl);
+      if (vSig !== state.ad.verdictSig) {
+        state.ad.verdictSig = vSig;
+        ui.updateAdWidget(state.ad.widget, { target, verdict, comps, offer: buildOffer(target, verdict), handlers: state.ad.handlers });
+      }
+      return;
+    }
+    if (state.ad.pendingKey === key) return;
+    state.ad.pendingKey = key;
 
-    const ctx = {
-      url: target.url,
-      title: target.title,
-      price: target.price,
-      currency: target.currency,
-    };
+    try {
+      const ctx = { url: target.url, title: target.title, price: target.price, currency: target.currency };
+      const { record, change } = await store.recordPrice(key, target.price, ctx);
+      const relist = await detectRelist(target, key);
+      const collapsed = await store.getFlag("widgetCollapsed");
+      if (epoch !== state.epoch || !state.alive) return; // navigated away mid-await
 
-    // Record price + maintain lightweight history, then detect likely relist.
-    const { record, change } = await store.recordPrice(id, target.price, ctx);
-    const relist = await detectRelist(target, id);
-
-    // Top few comparables for the inline drawer.
-    const comparables = comps.slice(0, 4).map((c) => c.listing);
-
-    ui.renderPageCard(target, verdict, {
-      onSimilar: () => openSimilarSearch(target),
-      onPresets: (anchor) => openPresets(anchor),
-      onOpen: () => window.open(target.url, "_blank"),
-      onHelp: () => openOptions(),
-      priceHistory: {
-        change,
-        price: record.price,
-        prevPrice: record.prevPrice,
-        currency: target.currency,
-      },
-      relist: relist.isRelist ? { title: relist.match.title } : null,
-      comparables,
-      quick: {
-        onCopyDefault: async () => {
-          const d = await OLXHelper.presets.getDefault();
-          if (!d) return ui.toast(null, "Нет шаблона по умолчанию");
-          navigator.clipboard
-            .writeText(d.text)
-            .then(() => ui.toast(null, "Скопировано: " + d.label))
-            .catch(() => ui.toast(null, "Не удалось скопировать"));
+      const handlers = adHandlers(target, key, ctx);
+      const data = {
+        target,
+        verdict,
+        comps,
+        anchor: target._priceEl,
+        collapsed,
+        offer: buildOffer(target, verdict),
+        history: { change, price: record && record.price, prevPrice: record && record.prevPrice, currency: target.currency },
+        relist: relist ? { title: relist.title } : null,
+        meta: {
+          record,
+          statuses: store.STATUSES,
+          onStatus: (s) => store.setStatus(key, s, ctx),
+          onNote: (n) => store.setNote(key, n, ctx),
+          onToggleSave: () => store.toggleSave(key, ctx),
         },
-        onMarkContacted: () => store.setStatus(id, "contacted", ctx),
-      },
-      meta: {
-        record,
-        statuses: store.STATUSES,
-        statusLabels: store.STATUS_LABELS,
-        onStatus: (s) => store.setStatus(id, s, ctx),
-        onNote: (n) => store.setNote(id, n, ctx),
-        onToggleSave: () => store.toggleSave(id, ctx),
-      },
-    });
+        handlers,
+      };
+      const widget = ui.renderAdWidget(data);
+      // `data` is kept so a language switch can re-render without re-reading storage.
+      state.ad = { ...emptyAdState(), key, title: target.title, widget, verdictSig: vSig, handlers, data };
 
-    renderedId = id; // mark this listing as rendered; skip rebuilds until nav
+      debug.event("ad", {
+        title: target.title.slice(0, 60),
+        price: target.price,
+        sources: target.sources,
+        status: verdict.status,
+        comps: verdict.comparablesCount,
+      });
+    } finally {
+      if (state.ad.pendingKey === key) state.ad.pendingKey = null;
+    }
   }
 
-  // Soft relist heuristic: a previously seen listing with a different id but a
-  // very similar title and a close price is likely the same item re-posted.
-  async function detectRelist(target, currentId) {
+  function teardownAd() {
+    ui.removeWidget();
+    state.ad = emptyAdState();
+  }
+
+  function adHandlers(target, key, ctx) {
+    return {
+      onSimilar: () => openSimilarSearch(target),
+      onPresets: (anchor) =>
+        ui.openPresetPopover(anchor, {
+          getPresets: () => P.getAll(),
+          add: (d) => P.add(d),
+          update: (id, patch) => P.update(id, patch),
+          remove: (id) => P.remove(id),
+          setDefault: (id) => P.setDefault(id),
+        }),
+      onCopyDefault: async () => {
+        const d = await P.getDefault();
+        if (!d) return ui.toast(t("toast.noDefault"));
+        await copyAndMark(d.text, t("toast.copied", { label: d.label }), key, ctx);
+      },
+      onCopy: (text) => copyAndMark(text, t("toast.offerCopied"), key, ctx),
+      onSettings: openOptions,
+      onCollapse: (collapsed) => store.setFlag("widgetCollapsed", collapsed),
+    };
+  }
+
+  // Copying a message to the seller implies contact: advance the status once.
+  async function copyAndMark(text, okMessage, key, ctx) {
+    const ok = await U.copyText(text);
+    ui.toast(ok ? okMessage : t("common.copyFailed"));
+    if (!ok) return;
+    const rec = await store.getRecord(key);
+    if (!rec || rec.status === "not_contacted") {
+      await store.setStatus(key, "contacted", ctx);
+      const sel = state.ad.widget && state.ad.widget.querySelector(".olxsh-select");
+      if (sel) {
+        sel.value = "contacted";
+        sel.closest(".olxsh-meta").dataset.status = "contacted";
+      }
+    }
+  }
+
+  /* ---------- negotiation template ---------- */
+
+  // Always in the SELLER's language (the OLX domain), regardless of the UI
+  // language the user picked: a Romanian seller gets a Romanian message.
+  function buildOffer(target, verdict) {
+    const value = E.suggestOffer(target, verdict);
+    if (value == null) return null;
+    const seller = I18N.sellerLocale();
+    // Quote the market only when it's leverage (the ad is overpriced).
+    const market = verdict.status === "high" ? U.formatPrice(verdict.baseline, verdict.currency) : null;
+    const title = U.truncate(target.title, 70);
+    return {
+      value,
+      currency: target.currency,
+      askPrice: target.price,
+      step: U.niceStep(target.price),
+      build: (v) =>
+        [
+          I18N.tFor(seller, "nego.greet", { title }),
+          market && I18N.tFor(seller, "nego.market", { market }),
+          I18N.tFor(seller, "nego.offer", { offer: U.formatPrice(v, target.currency) }),
+        ]
+          .filter(Boolean)
+          .join(" "),
+    };
+  }
+
+  /* ---------- actions ---------- */
+
+  function openSimilarSearch(target) {
+    const query = E.modelQuery(target.title);
+    if (!query) return;
+    // OLX search slugs join words with "-"; the interface language comes from
+    // the user's cookie, so no /uk/ prefix is needed.
+    const slug = query.split(" ").map(encodeURIComponent).join("-");
+    window.open(`${location.origin}/${U.region().searchPath}/q-${slug}/`, "_blank", "noopener");
+  }
+
+  // Content scripts can't call openOptionsPage(); the background worker does.
+  function openOptions() {
+    try {
+      chrome.runtime.sendMessage({ type: "openOptions" }, () => void chrome.runtime.lastError);
+    } catch (e) {
+      shutdown(); // context invalidated
+    }
+  }
+
+  // Soft relist heuristic: a previously seen ad with a different id but a very
+  // similar title and a close price is likely the same item re-posted.
+  async function detectRelist(target, currentKey) {
     try {
       const map = await store.getAll();
-      const tks = target.keywords;
-      if (!tks || !tks.length) return { isRelist: false };
+      if (!target.tokens.length) return null;
       for (const [rid, r] of Object.entries(map)) {
-        if (rid === currentId || !r || !r.title) continue;
-        const sim = similarity.jaccard(tks, U.tokenize(r.title));
-        if (sim < 0.7) continue;
+        if (rid === currentKey || !r || !r.title) continue;
+        if (E.jaccard(target.tokens, U.tokenize(r.title)) < 0.7) continue;
         const priceClose =
-          target.price != null && r.price != null
-            ? Math.abs(target.price - r.price) / Math.max(r.price, 1) <= 0.15
-            : true; // if a price is missing, title match alone is enough for a soft flag
-        if (priceClose) return { isRelist: true, match: r, sim };
+          target.price != null && r.price != null ? Math.abs(target.price - r.price) / Math.max(r.price, 1) <= 0.15 : true;
+        if (priceClose) return r;
       }
     } catch (e) {
       /* ignore */
     }
-    return { isRelist: false };
+    return null;
   }
 
-  // Open the options page via the proper extension API. Content scripts can't
-  // call openOptionsPage() directly and raw-navigating to the extension URL is
-  // blocked (ERR_BLOCKED_BY_CLIENT), so we ask the background worker to do it.
-  function openOptions() {
-    try {
-      chrome.runtime.sendMessage({ type: "openOptions" }, () => {
-        void chrome.runtime.lastError; // ignore "no receiver" during dev reloads
-      });
-    } catch (e) {
-      /* ignore if messaging is unavailable */
+  /* ---------- change detection ---------- */
+
+  function onRouteSignal() {
+    if (!ensureAlive()) return;
+    const key = routeKey();
+    if (key === state.route) return; // replaceState for scroll restoration, hash changes…
+    state.route = key;
+    state.epoch++;
+    state.routeAt = Date.now();
+    state.prevAd = { key: state.ad.key, title: state.ad.title };
+    state.cardsSig = "";
+    teardownAd();
+    debug.event("route", { path: location.pathname });
+    scheduleRun();
+  }
+
+  // Our own insertions must never re-trigger a pass (that's the infinite loop).
+  // Removals always count: React dropping our pill/widget should restore it.
+  function isForeignMutation(m) {
+    const target = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+    if (target && target.closest(X.OWN)) return false;
+    if (m.type === "characterData") return true; // React reusing a node with new text
+    if (m.removedNodes.length) return true;
+    for (const n of m.addedNodes) {
+      if (n.nodeType !== 1 || !n.hasAttribute("data-olxsh")) return true;
     }
+    return false;
   }
 
-  /* ---------- action handlers ---------- */
-
-  function openSimilarSearch(target) {
-    // Use the actual listing title (normalized) as the search query.
-    let query = U.buildSearchQuery(target.title);
-    // Fallback to detected brand/model + keywords only if the title is unusable.
-    if (!query) {
-      query = [...target.brandHints, ...target.keywords.slice(0, 4)]
-        .filter((v, i, a) => a.indexOf(v) === i)
-        .slice(0, 6)
-        .join(" ");
-    }
-    if (!query) return; // nothing meaningful to search — don't open a junk query
-    const origin = location.origin;
-    window.open(`${origin}/list/q-${encodeURIComponent(query)}/`, "_blank");
-  }
-
-  // Open the message-preset popover, wired to the presets storage module.
-  function openPresets(anchor) {
-    const P = OLXHelper.presets;
-    ui.openPresetPopover(anchor, {
-      getPresets: () => P.getAll(),
-      add: (data) => P.add(data),
-      update: (id, patch) => P.update(id, patch),
-      remove: (id) => P.remove(id),
-      setDefault: (id) => P.setDefault(id),
-    });
-  }
-
-  /* ---------- run loop + SPA / lazy-load handling ---------- */
-
-  let scheduled = false;
-  let debugRun = false; // true for one run cycle when debug logging should fire
-  let renderedId = null; // listing id the helper card is currently rendered for
-  function run() {
-    scheduled = false;
-    try {
-      // One throttled debug window per run so sibling logs stay coherent.
-      debugRun = debug.enabled && debug.throttle();
-      const listing = extractor.isListingPage();
-      if (debugRun) {
-        debug.event("page-type", {
-          type: listing ? "listing" : "search/other",
-          path: location.pathname,
-        });
-      }
-      if (listing) {
-        Promise.resolve(analyzePage()).catch((e) =>
-          console.debug("[OLX Smart Helper]", e)
-        );
-      } else {
-        analyzeCards();
-      }
-    } catch (e) {
-      /* fail quietly — never break the host page */
-      console.debug("[OLX Smart Helper]", e);
-    }
-  }
-
-  function schedule() {
-    if (scheduled) return;
-    scheduled = true;
-    setTimeout(run, 350);
-  }
-
-  // Initial run.
-  schedule();
-
-  // Re-run on DOM mutations (infinite scroll, filter changes, SPA nav).
   const observer = new MutationObserver((mutations) => {
     for (const m of mutations) {
-      if (m.addedNodes && m.addedNodes.length) {
-        schedule();
+      if (isForeignMutation(m)) {
+        scheduleRun();
         return;
       }
     }
   });
-  observer.observe(document.body, { childList: true, subtree: true });
 
-  // Re-run on history navigation (OLX is a SPA).
-  let lastUrl = location.href;
-  setInterval(() => {
-    if (location.href !== lastUrl) {
-      lastUrl = location.href;
-      renderedId = null; // navigated to a different listing → allow a fresh render
-      document.getElementById("olxsh-card")?.remove();
-      schedule();
+  window.addEventListener("olxsh:locationchange", onRouteSignal);
+  window.addEventListener("popstate", onRouteSignal);
+  window.addEventListener("pageshow", (e) => e.persisted && onRouteSignal());
+  if (window.navigation && typeof window.navigation.addEventListener === "function") {
+    window.navigation.addEventListener("navigatesuccess", onRouteSignal);
+  }
+  const pollTimer = setInterval(onRouteSignal, URL_POLL_MS);
+
+  // Language switched (popup / options / another tab): pills re-render in
+  // place (their signature includes the locale); the widget is rebuilt from
+  // its last data so collapsed state, history chips and handlers survive.
+  function relocalize() {
+    if (!ensureAlive()) return;
+    state.cardsSig = "";
+    const { widget, data } = state.ad;
+    if (widget && data) {
+      const rebuilt = ui.renderAdWidget({ ...data, collapsed: widget.classList.contains("is-collapsed") });
+      state.ad = { ...state.ad, widget: rebuilt };
     }
-  }, 800);
+    scheduleRun();
+  }
+
+  function start() {
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    I18N.onChange(relocalize);
+    scheduleRun();
+  }
+
+  // document_idle usually runs after hydration; one idle tick of margin keeps
+  // our nodes out of React's hydration diff.
+  // The language preference must be loaded before the first render.
+  function boot() {
+    I18N.ready.then(() => {
+      if ("requestIdleCallback" in window) requestIdleCallback(start, { timeout: 1500 });
+      else setTimeout(start, 300);
+    });
+  }
+  if (document.body) boot();
+  else document.addEventListener("DOMContentLoaded", boot, { once: true });
 })();

@@ -1,0 +1,261 @@
+/* OLX Smart Helper — options page layout (components come from ../shared/base.css). */
+
+.app {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 28px;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+
+/* ---------- sidebar ---------- */
+
+.sidebar {
+  position: sticky;
+  top: 32px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tagline {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: -2px 0 4px;
+}
+
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.tab:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.tab[aria-selected="true"] {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.tab[aria-selected="true"]::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+.tab[aria-selected="true"] .ico {
+  color: var(--accent);
+}
+.tab-count {
+  margin-left: auto;
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11.5px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- content ---------- */
+
+.content {
+  min-width: 0;
+}
+
+.panel {
+  animation: panel-in 0.25s var(--ease) both;
+}
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.mt {
+  margin-top: 12px;
+}
+
+.lang-field {
+  max-width: 340px;
+}
+
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--text);
+}
+.note .ico {
+  color: var(--accent);
+  margin-top: 1px;
+}
+
+.add-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.btn-row.end {
+  justify-content: flex-end;
+}
+
+.card-head.compact {
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+/* ---------- saved listings ---------- */
+
+.saved {
+  align-items: flex-start;
+  padding: 12px 12px 12px 14px;
+}
+.saved .item-title a {
+  color: var(--text);
+}
+.saved .item-title a:hover {
+  color: var(--accent);
+  text-decoration: none;
+}
+.saved-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.saved-price {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  margin-right: 4px;
+}
+.saved-date {
+  font-size: 12px;
+  color: var(--faint);
+}
+.saved-note {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-left: 2px solid var(--line-strong);
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--muted);
+}
+
+/* ---------- debug log ---------- */
+
+.log {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.18);
+}
+.log:empty {
+  display: none;
+}
+.log .empty {
+  border: 0;
+}
+.log-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 7px 12px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.log-row:first-child {
+  border-top: 0;
+}
+.log-time {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.log-type {
+  font-weight: 700;
+  color: var(--accent);
+}
+.log-type.is-warn {
+  color: var(--fair);
+}
+.log-payload {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* ---------- narrow screens ---------- */
+
+@media (max-width: 760px) {
+  .app {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding: 18px 14px 48px;
+  }
+  .sidebar {
+    position: static;
+  }
+  .tagline {
+    display: none;
+  }
+  .tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .tab {
+    width: auto;
+    flex: 0 0 auto;
+  }
+  .tab[aria-selected="true"]::before {
+    left: 10px;
+    right: 10px;
+    top: auto;
+    bottom: -1px;
+    width: auto;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
+  }
+  .card {
+    padding: 16px;
+  }
+}

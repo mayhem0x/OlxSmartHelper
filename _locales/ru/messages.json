@@ -1,0 +1,11 @@
+{
+  "extName": {
+    "message": "OLX Smart Helper"
+  },
+  "extDescription": {
+    "message": "Показывает, выгодная, рыночная или завышенная цена у объявления на OLX."
+  },
+  "actionTitle": {
+    "message": "OLX Smart Helper — рыночная оценка цен"
+  }
+}

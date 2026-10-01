@@ -1,0 +1,11 @@
+{
+  "extName": {
+    "message": "OLX Smart Helper"
+  },
+  "extDescription": {
+    "message": "Pokazuje, czy cena ogłoszenia na OLX jest okazyjna, rynkowa czy zawyżona."
+  },
+  "actionTitle": {
+    "message": "OLX Smart Helper — rynkowa ocena cen"
+  }
+}

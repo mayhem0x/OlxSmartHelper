@@ -16,7 +16,8 @@
 
   const KEY = "olxsh_presets";
 
-  // Seeded on first run. Labels are short; text is the full seller message.
+  // Seeded on first run in the active UI language (i18n.defaultPresets);
+  // this Russian list is the fallback when i18n isn't loaded.
   const DEFAULTS = [
     { label: "Актуально?", text: "Здравствуйте! Актуально ли это объявление?", isDefault: true },
     { label: "Заберу сегодня", text: "Если предложение ещё актуально, могу забрать сегодня. Удобно ли вам?" },
@@ -59,7 +60,8 @@
   async function getAll() {
     let list = await rawGet();
     if (!Array.isArray(list)) {
-      list = DEFAULTS.map((p) => ({ id: uid(), ...p }));
+      const seeds = OLXHelper.i18n ? OLXHelper.i18n.defaultPresets() : DEFAULTS;
+      list = seeds.map((p) => ({ id: uid(), ...p }));
       ensureSingleDefault(list);
       await rawSet(list);
     }
@@ -68,7 +70,8 @@
 
   async function add({ label, text }) {
     const list = await getAll();
-    const preset = { id: uid(), label: (label || "").trim() || "Без названия", text: (text || "").trim() };
+    const untitled = OLXHelper.i18n ? OLXHelper.i18n.t("presets.untitled") : "Без названия";
+    const preset = { id: uid(), label: (label || "").trim() || untitled, text: (text || "").trim() };
     if (!preset.text) return list; // ignore empty
     list.push(preset);
     await rawSet(list);
@@ -106,6 +109,29 @@
     return list.find((p) => p.isDefault) || list[0] || null;
   }
 
+  // Persist a new order (ids not listed keep their relative order at the end).
+  async function reorder(ids) {
+    const list = await getAll();
+    const pos = new Map(ids.map((id, i) => [id, i]));
+    const sorted = list
+      .map((p, i) => ({ p, k: pos.has(p.id) ? pos.get(p.id) : ids.length + i }))
+      .sort((a, b) => a.k - b.k)
+      .map((x) => x.p);
+    await rawSet(sorted);
+    return sorted;
+  }
+
+  // Undo for remove(): put the preset back at its old index, default flag included.
+  async function restore(preset, index) {
+    let list = (await getAll()).filter((x) => x.id !== preset.id);
+    const at = Math.max(0, Math.min(index ?? list.length, list.length));
+    list.splice(at, 0, { ...preset });
+    if (preset.isDefault) for (const p of list) p.isDefault = p.id === preset.id;
+    ensureSingleDefault(list);
+    await rawSet(list);
+    return list;
+  }
+
   function ensureSingleDefault(list) {
     if (!list.length) return;
     if (!list.some((p) => p.isDefault)) list[0].isDefault = true;
@@ -120,5 +146,7 @@
     remove,
     setDefault,
     getDefault,
+    reorder,
+    restore,
   };
 })();

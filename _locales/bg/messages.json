@@ -1,0 +1,11 @@
+{
+  "extName": {
+    "message": "OLX Smart Helper"
+  },
+  "extDescription": {
+    "message": "Показва дали цената на обява в OLX е изгодна, пазарна или завишена."
+  },
+  "actionTitle": {
+    "message": "OLX Smart Helper — пазарна оценка на цените"
+  }
+}
